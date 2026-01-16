@@ -1,0 +1,55 @@
+name: Build Kernel for OnePlus 10 Pro v2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v3
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick libncurses-dev libreadline-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev llvm lld clang
+
+    - name: Clone Kernel Source
+      run: |
+        git clone --depth=1 https://github.com/LineageOS/android_kernel_oneplus_sm8450.git -b lineage-22.2 kernel_workspace
+
+    - name: Configure & RAM Optimization
+      run: |
+        cd kernel_workspace
+        make O=out mrproper
+        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        
+        # OnePlus & NetHunter Configs
+        cat arch/arm64/configs/vendor/waipio_GKI.config >> out/.config
+        cat arch/arm64/configs/vendor/oplus/waipio_GKI.config >> out/.config
+        
+        # WiFi Injection Support
+        echo "CONFIG_WLAN=y" >> out/.config
+        echo "CONFIG_RTL8187=y" >> out/.config
+        echo "CONFIG_ATH9K_HTC=y" >> out/.config
+        
+        # DISABLE LTO TO PREVENT RAM CRASH (Important!)
+        scripts/config --file out/.config --disable LTO_CLANG
+        scripts/config --file out/.config --disable LTO_CLANG_THIN
+        scripts/config --file out/.config --disable LTO_CLANG_FULL
+        scripts/config --file out/.config --enable LTO_NONE
+        
+        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+    - name: Build Kernel
+      run: |
+        cd kernel_workspace
+        # GitHub Runner ko stable rakhne ke liye -j2
+        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- -j2 Image
+
+    - name: Upload Kernel Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: Image-OnePlus10Pro
+        path: kernel_workspace/out/arch/arm64/boot/Image
