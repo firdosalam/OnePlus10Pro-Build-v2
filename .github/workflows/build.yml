@@ -1,4 +1,4 @@
-name: Build NetHunter Kernel v3 (AnyKernel3)
+name: Build NetHunter Kernel v3 (Safe Mode)
 
 on:
   workflow_dispatch:
@@ -20,19 +20,36 @@ jobs:
         git clone --depth=1 https://github.com/LineageOS/android_kernel_oneplus_sm8450.git -b lineage-22.2 kernel_workspace
         git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-    - name: Build Kernel
+    - name: Configure Kernel
       run: |
         cd kernel_workspace
+        make O=out mrproper
         make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-        # Disable LTO for RAM safety
-        scripts/config --file out/.config --disable LTO_CLANG --disable LTO_CLANG_THIN --enable LTO_NONE
-        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image
         
+        # OnePlus & NetHunter Configs
+        cat arch/arm64/configs/vendor/waipio_GKI.config >> out/.config
+        cat arch/arm64/configs/vendor/oplus/waipio_GKI.config >> out/.config
+        
+        # WiFi Injection Support
+        echo "CONFIG_WLAN=y" >> out/.config
+        echo "CONFIG_RTL8187=y" >> out/.config
+        echo "CONFIG_ATH9K_HTC=y" >> out/.config
+        
+        # DISABLE LTO (RAM SAVER)
+        scripts/config --file out/.config --disable LTO_CLANG --disable LTO_CLANG_THIN --enable LTO_NONE
+        
+        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+    - name: Build Kernel (Safe -j2)
+      run: |
+        cd kernel_workspace
+        # Wapas -j2 laga diya taaki crash na ho
+        make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- -j2 Image
+
     - name: Prepare AnyKernel3 Zip
       run: |
         cp kernel_workspace/out/arch/arm64/boot/Image AnyKernel3/
         cd AnyKernel3
-        # Simple config for GKI
         sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
         sed -i 's/block=\/dev\/block\/td/block=auto/g' anykernel.sh
         zip -r9 ../NetHunter-Kernel-OnePlus10Pro.zip * -x .git README.md
